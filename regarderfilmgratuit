@@ -1,0 +1,155 @@
+#!/bin/bash
+	
+usage()
+{
+cat << EOF
+
+usage: $0 -n seriename options
+
+ This script allow to extract info from regarder-film-gratuit.com
+ 
+ OPTIONS:
+    -h     Show this message
+  Inputs
+    -n 	   serie name [mandatory]
+    -s     saison
+    -e     episode
+    -m     first episode to show using list all 
+    -x     last episode to show using list all 
+  Actions
+    -d     dump cmd to download streamingservice using youwatch [ requires -s -e]
+    -D     dump cmd to download streamingservice [vk or yw, requires -s -e]
+    -g     to directely run the download command
+    -l     to list last available episode
+    -a 	   to list all episode youwatch link for season s episode m to x [requires -s -m -x]
+
+  Examples:
+   regarderfilmgratuit -n homeland -l
+   regarderfilmgratuit -n greys-anatomy -a -s3 -m2 -x15
+   regarderfilmgratuit -n revenge -d -s2 -e7
+   regarderfilmgratuit -n revenge -D yw -s2 -e7
+
+EOF
+}
+
+
+
+
+SERIENAME=
+EPISODE=
+SAISON=
+EPISODEURL=
+STRSERVICE=
+LISTALL=false
+LISTALLMIN=
+LISTALLMAX=
+LISTLAST=false
+RUNDOWN=false
+
+while getopts “hlgdD:n:s:e:am:x:” OPTION
+do
+     case $OPTION in
+         h)
+             usage
+             exit 1
+             ;;
+         d)
+	     STRSERVICE='yw'
+	     ;;
+         D)
+             if [[ $OPTARG = 'vk' ]]
+             	then
+             		STRSERVICE='vk'
+             else
+         		STRSERVICE='yw'
+         	 fi
+             ;;
+         n)
+             SERIENAME=$OPTARG
+             ;;
+         s)
+             SAISON=$OPTARG
+             ;;
+         e)
+             EPISODE=$OPTARG
+             ;;
+         l)
+           	 LISTLAST=true
+             ;;  
+         a)
+           	 LISTALL=true
+             ;;           
+         m)
+           	 LISTALLMIN=$OPTARG
+             ;;           
+         x)
+           	 LISTALLMAX=$OPTARG
+             ;;                        
+         g)
+           	 RUNDOWN=true
+             ;;  
+         ?)
+             usage
+             exit
+             ;;
+     esac
+done
+
+if [[ -z $SERIENAME ]]
+then
+     echo "missing mandatory -n seriename"
+     usage
+     exit 1
+fi
+
+if [[ -n $STRSERVICE ]]
+ then
+ 	if [[ -z $EPISODE ]] || [[ -z $SAISON ]]
+	then
+	     usage
+	     exit 1
+ 	else
+		EPISODEURL="http://www.regarder-film-gratuit.com/$SERIENAME-saison-$SAISON-episode-$EPISODE/"
+		if [[ $STRSERVICE = "vk" ]]
+			then
+				if $RUNDOWN
+					then 
+						curl --silent  $(curl --silent $EPISODEURL |egrep -oh -m 1 "http://vk.*hd=1" | sed 's/#038;//g') | egrep -oh -m 1 "url360=[^=]*360.mp4" |sed 's/url360=/wget /g'|sed "s/$/ -O ${SERIENAME}_s${SAISON}_e${EPISODE}.mp4/g" | sh ; 
+					else 
+						curl --silent  $(curl --silent $EPISODEURL |egrep -oh -m 1 "http://vk.*hd=1" | sed 's/#038;//g') | egrep -oh -m 1 "url360=[^=]*360.mp4" |sed 's/url360=/wget /g'|sed "s/$/ -O ${SERIENAME}_s${SAISON}_e${EPISODE}.mp4/g" ; 
+				fi
+		elif [[ $STRSERVICE = "yw" ]]
+			then
+				if $RUNDOWN
+					then 
+						curl --silent  $(curl --silent $EPISODEURL |egrep -oh -m 1 'http://youwatch[^"]*800x460.html')   |egrep -oh "video\|[^|]*\|.*\|.*\|setup" |sed 's;video|\([^|]*\)|\([^|]*\)|\([^|]*\)|setup;wget http://\3.youwatch.org:\2/\1/video.mp4;g' |sed "s,$, -O ${SERIENAME}_s${SAISON}_e${EPISODE}.mp4,g" |sh ;
+					else
+						curl --silent  $(curl --silent $EPISODEURL |egrep -oh -m 1 'http://youwatch[^"]*800x460.html')   |egrep -oh "video\|[^|]*\|.*\|.*\|setup" |sed 's;video|\([^|]*\)|\([^|]*\)|\([^|]*\)|setup;wget http://\3.youwatch.org:\2/\1/video.mp4;g' |sed "s,$, -O ${SERIENAME}_s${SAISON}_e${EPISODE}.mp4,g";						
+				fi
+		fi
+	fi
+fi
+
+if $LISTLAST
+	then 
+		LISTLASTURL=""
+		LISTLASTURL=$(elinks -source http://www.regarder-film-gratuit.com/category/series/$SERIENAME | egrep -o "http://www.regarder-film-gratuit.com/category/series/[a-zA-Z\-]*/page/[0-9]+" |sort |tail -1 )
+	 	if [[ -z $LISTLASTURL ]]
+	 		then 
+ 		 		elinks -source http://www.regarder-film-gratuit.com/category/series/$SERIENAME |egrep -o "(?bookmark\">).+saison [0-9]+ épisode [0-9]+" |sed 's/^.*>//g'; 
+	 		else
+	 		 	elinks $LISTLASTURL  | egrep "^\[[0-9]+\].*saison [0-9]+ épisode [0-9]+" ;
+	 	fi
+fi
+
+if $LISTALL
+ then 
+ 	if [[ -z $LISTALLMIN ]] || [[ -z $LISTALLMAX ]] || [[ -z $SAISON ]]
+	then
+	     echo "missing -m, -x or -s option"
+	     usage
+	     exit 1
+ 	else
+ 		for ((i = $LISTALLMIN ; i <= $LISTALLMAX; i++)); do echo "Episode $i" ; curl --silent http://www.regarder-film-gratuit.com/$SERIENAME-saison-$SAISON-episode-$i/ |egrep -o "http://youwatch.*800x460.html"; done
+	fi
+fi
